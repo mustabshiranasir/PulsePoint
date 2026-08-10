@@ -1,8 +1,13 @@
+import 'dart:async';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:geoflutterfire_plus/geoflutterfire_plus.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../providers/auth_provider.dart';
 import '../providers/blood_request_provider.dart';
 import '../models/blood_request_model.dart';
@@ -20,14 +25,55 @@ class _DonorDashboardState extends State<DonorDashboard> {
   bool _fetchingLocation = false;
   String? _locationError;
 
+  // Handles updates to donorLiveLocation in the background
+  StreamSubscription<Position>? _liveLocationSubscription;
+  String? _activeRequestId;
+
   @override
   void initState() {
     super.initState();
     _fetchLocation();
   }
 
-  // Resolves the current GPS coordinates of the donor
+  @override
+  void dispose() {
+    _stopLiveTracking();
+    super.dispose();
+  }
+
+  // Starts streaming the donor's coordinates to Firestore
+  void _startLiveTracking(String requestId) {
+    if (_activeRequestId == requestId) return;
+    _activeRequestId = requestId;
+    _liveLocationSubscription?.cancel();
+
+    final settings = const LocationSettings(
+      accuracy: LocationAccuracy.high,
+      distanceFilter: 5,
+    );
+
+    final bloodProvider = Provider.of<BloodRequestProvider>(context, listen: false);
+    _liveLocationSubscription =
+        Geolocator.getPositionStream(locationSettings: settings).listen((position) {
+      if (mounted) {
+        setState(() {
+          _currentPosition = position;
+        });
+      }
+      bloodProvider.updateDonorLocation(requestId, position.latitude, position.longitude);
+    });
+  }
+
+  // Stops location streaming
+  void _stopLiveTracking() {
+    _liveLocationSubscription?.cancel();
+    _liveLocationSubscription = null;
+    _activeRequestId = null;
+  }
+
+  // Acquires the donor's current position
   Future<void> _fetchLocation() async {
+    if (_fetchingLocation) return;
     setState(() {
       _fetchingLocation = true;
       _locationError = null;
@@ -48,6 +94,7 @@ class _DonorDashboardState extends State<DonorDashboard> {
       }
 
       if (permission == LocationPermission.deniedForever) {
+        _showPermissionDialog();
         throw Exception('Location permissions are permanently denied.');
       }
 
@@ -68,8 +115,55 @@ class _DonorDashboardState extends State<DonorDashboard> {
     }
   }
 
-  // Opens a confirmation dialog before accepting the blood request
-  void _confirmAccept(BuildContext context, BloodRequestModel request, String donorId) {
+  // Explains what to do if permissions are permanently denied
+  void _showPermissionDialog() {
+    showDialog(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
+        title: const Text('GPS Permission Required'),
+        content: const Text(
+          'PulsePoint requires location access to find nearby blood requests. Please enable location permissions in your app settings.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogCtx),
+            child: const Text('OK'),
+          ),
+          TextButton(
+            onPressed: () async {
+              Navigator.pop(dialogCtx);
+              await Geolocator.openAppSettings();
+            },
+            child: const Text('Open Settings'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Handles calling the hospital requester
+  Future<void> _callRequester(BuildContext context, String phoneNumber) async {
+    final Uri launchUri = Uri(
+      scheme: 'tel',
+      path: phoneNumber.replaceAll(RegExp(r'\s+'), ''),
+    );
+    try {
+      if (await canLaunchUrl(launchUri)) {
+        await launchUrl(launchUri);
+      } else {
+        throw Exception('Call functionality is not supported on this device.');
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not open phone dialer: ${e.toString()}')),
+        );
+      }
+    }
+  }
+
+  // Double-checks before accepting
+  void _confirmAccept(BuildContext context, BloodRequestModel request, String donorId, String donorPhone) {
     showDialog(
       context: context,
       builder: (dialogCtx) {
@@ -86,7 +180,7 @@ class _DonorDashboardState extends State<DonorDashboard> {
             TextButton(
               onPressed: () {
                 Navigator.pop(dialogCtx);
-                _handleAccept(context, request.id, donorId);
+                _handleAccept(context, request.id, donorId, donorPhone);
               },
               child: Text(
                 'Accept',
@@ -99,15 +193,19 @@ class _DonorDashboardState extends State<DonorDashboard> {
     );
   }
 
-  void _handleAccept(BuildContext context, String requestId, String donorId) async {
+  void _handleAccept(BuildContext context, String requestId, String donorId, String donorPhone) async {
     final bloodProvider = Provider.of<BloodRequestProvider>(context, listen: false);
     final messenger = ScaffoldMessenger.of(context);
 
     try {
-      await bloodProvider.acceptRequest(requestId: requestId, donorId: donorId);
+      await bloodProvider.acceptRequest(
+        requestId: requestId,
+        donorId: donorId,
+        donorPhone: donorPhone,
+      );
       messenger.showSnackBar(
         const SnackBar(
-          content: Text('Request accepted successfully! Please proceed to the hospital.'),
+          content: Text('Request accepted successfully! Navigate to the hospital.'),
           backgroundColor: Colors.green,
         ),
       );
@@ -121,12 +219,241 @@ class _DonorDashboardState extends State<DonorDashboard> {
     }
   }
 
+  // Updates request status to completed
+  void _markAsArrived(BuildContext context, String requestId) async {
+    final bloodProvider = Provider.of<BloodRequestProvider>(context, listen: false);
+    final messenger = ScaffoldMessenger.of(context);
+
+    try {
+      await bloodProvider.updateRequestStatus(requestId, 'completed');
+      _stopLiveTracking();
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text('Thank you! Blood donation request marked as completed.'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } catch (e) {
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text('Error: ${e.toString()}'),
+          backgroundColor: Colors.red[800],
+        ),
+      );
+    }
+  }
+
+  // Simple Haversine calculation to get distance
+  double _calculateDistance(double lat1, double lon1, double lat2, double lon2) {
+    const double r = 6371; // Earth's radius in km
+    final double dLat = (lat2 - lat1) * math.pi / 180;
+    final double dLon = (lon2 - lon1) * math.pi / 180;
+    final double a = math.sin(dLat / 2) * math.sin(dLat / 2) +
+        math.cos(lat1 * math.pi / 180) *
+            math.cos(lat2 * math.pi / 180) *
+            math.sin(dLon / 2) *
+            math.sin(dLon / 2);
+    final double c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a));
+    return r * c;
+  }
+
   @override
   Widget build(BuildContext context) {
     final authProvider = Provider.of<AuthProvider>(context);
     final bloodProvider = Provider.of<BloodRequestProvider>(context);
     final user = authProvider.currentUser;
-    final bool isAvailable = user?.isAvailable ?? false;
+
+    if (user == null) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+
+    return StreamBuilder<List<BloodRequestModel>>(
+      stream: bloodProvider.streamDonorActiveRequests(user.uid),
+      builder: (context, activeSnapshot) {
+        final activeRequests = activeSnapshot.data ?? [];
+
+        if (activeRequests.isNotEmpty) {
+          final activeReq = activeRequests.first;
+          // Trigger post frame callback to start updating location safely
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            _startLiveTracking(activeReq.id);
+          });
+          return _buildNavigationDashboard(context, activeReq, user);
+        } else {
+          // If no accepted requests are present, stop updates
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            _stopLiveTracking();
+          });
+          return _buildRequestListDashboard(context, user);
+        }
+      },
+    );
+  }
+
+  // --- DASHBOARD LAYOUT 1: Navigation / Active Route screen ---
+  Widget _buildNavigationDashboard(
+      BuildContext context, BloodRequestModel request, var user) {
+    final double donorLat = _currentPosition?.latitude ?? request.geoPoint.latitude;
+    final double donorLng = _currentPosition?.longitude ?? request.geoPoint.longitude;
+
+    final LatLng hospitalLatLng = LatLng(request.geoPoint.latitude, request.geoPoint.longitude);
+    final LatLng donorLatLng = LatLng(donorLat, donorLng);
+
+    // Calculate distance and time (Assuming 35km/h average city speed)
+    final double distance = _calculateDistance(
+      donorLat,
+      donorLng,
+      request.geoPoint.latitude,
+      request.geoPoint.longitude,
+    );
+    final int estMinutes = math.max(1, ((distance / 35.0) * 60.0).round());
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('En Route to Hospital'),
+        backgroundColor: Colors.blue[900],
+        foregroundColor: Colors.white,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.gps_fixed),
+            onPressed: _fetchLocation,
+          ),
+        ],
+      ),
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // Navigation Banner
+          Container(
+            padding: const EdgeInsets.all(16),
+            color: Colors.blue[50],
+            child: Row(
+              children: [
+                Icon(Icons.directions_car_rounded, color: Colors.blue[800], size: 32),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Hospital: ${request.hospitalName}',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: Colors.blue[900],
+                          fontSize: 15,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Distance: ${distance.toStringAsFixed(1)} km  •  Est. Time: $estMinutes min',
+                        style: TextStyle(color: Colors.grey[700], fontSize: 13),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          // Live route Map
+          Expanded(
+            child: FlutterMap(
+              options: MapOptions(
+                initialCenter: donorLatLng,
+                initialZoom: 14.0,
+              ),
+              children: [
+                TileLayer(
+                  urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                  userAgentPackageName: 'com.pulsepoint',
+                ),
+                PolylineLayer(
+                  polylines: [
+                    Polyline(
+                      points: [donorLatLng, hospitalLatLng],
+                      color: Colors.blue[800]!,
+                      strokeWidth: 4.0,
+                      pattern: StrokePattern.dashed(segments: const [10, 5]),
+                    )
+                  ],
+                ),
+                MarkerLayer(
+                  markers: [
+                    Marker(
+                      point: hospitalLatLng,
+                      width: 50,
+                      height: 50,
+                      child: const Icon(Icons.local_hospital, color: Colors.red, size: 40),
+                    ),
+                    Marker(
+                      point: donorLatLng,
+                      width: 50,
+                      height: 50,
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: Colors.blue.withAlpha(50),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(Icons.directions_run_rounded, color: Colors.blueAccent, size: 36),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+
+          // Control Actions Panel
+          Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              boxShadow: [BoxShadow(color: Colors.black.withAlpha(20), blurRadius: 10, spreadRadius: 2)],
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Patient: ${request.patientName}',
+                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                          ),
+                          Text('Blood Needed: ${request.bloodGroupNeeded} (${request.unitsNeeded} units)'),
+                        ],
+                      ),
+                    ),
+                    IconButton.filled(
+                      icon: const Icon(Icons.call),
+                      style: IconButton.styleFrom(backgroundColor: Colors.green),
+                      onPressed: () => _callRequester(context, request.requesterPhone),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 20),
+                CustomButton(
+                  text: 'MARK AS ARRIVED',
+                  onPressed: () => _markAsArrived(context, request.id),
+                  backgroundColor: Colors.green[800],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // --- DASHBOARD LAYOUT 2: Standard available requests screen ---
+  Widget _buildRequestListDashboard(BuildContext context, var user) {
+    final bloodProvider = Provider.of<BloodRequestProvider>(context);
+    final bool isAvailable = user.isAvailable ?? false;
 
     return Scaffold(
       appBar: AppBar(
@@ -143,7 +470,7 @@ class _DonorDashboardState extends State<DonorDashboard> {
             onPressed: () async {
               final messenger = ScaffoldMessenger.of(context);
               try {
-                await authProvider.logout();
+                await Provider.of<AuthProvider>(context, listen: false).logout();
               } catch (e) {
                 messenger.showSnackBar(
                   SnackBar(content: Text('Logout failed: ${e.toString()}')),
@@ -156,7 +483,7 @@ class _DonorDashboardState extends State<DonorDashboard> {
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Donor Details Header Card
+          // Availability header
           Container(
             padding: const EdgeInsets.all(20),
             decoration: BoxDecoration(
@@ -165,91 +492,85 @@ class _DonorDashboardState extends State<DonorDashboard> {
                 bottom: Radius.circular(24),
               ),
             ),
-            child: Column(
+            child: Row(
               children: [
-                Row(
-                  children: [
-                    Container(
-                      width: 60,
-                      height: 60,
-                      decoration: BoxDecoration(
-                        color: Colors.red[50],
-                        shape: BoxShape.circle,
-                        border: Border.all(color: Colors.red.shade100, width: 2),
+                Container(
+                  width: 60,
+                  height: 60,
+                  decoration: BoxDecoration(
+                    color: Colors.red[50],
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.red.shade100, width: 2),
+                  ),
+                  child: Center(
+                    child: Text(
+                      user.bloodGroup ?? 'N/A',
+                      style: const TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.red,
                       ),
-                      child: Center(
-                        child: Text(
-                          user?.bloodGroup ?? 'N/A',
-                          style: const TextStyle(
-                            fontSize: 22,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.red,
-                          ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Welcome, ${user.name}!',
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.blue[900],
                         ),
                       ),
-                    ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Welcome, ${user?.name ?? 'Donor'}!',
-                            style: TextStyle(
-                              fontSize: 20,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.blue[900],
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            'Available to Donate: ${isAvailable ? "Active" : "Inactive"}',
-                            style: TextStyle(
-                              fontSize: 13,
-                              color: isAvailable ? Colors.green[700] : Colors.grey[600],
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ],
+                      const SizedBox(height: 4),
+                      Text(
+                        'Available to Donate: ${isAvailable ? "Active" : "Inactive"}',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: isAvailable ? Colors.green[700] : Colors.grey[600],
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
-                    ),
-                    Switch.adaptive(
-                      value: isAvailable,
-                      activeThumbColor: Colors.red,
-                      activeTrackColor: Colors.red.shade100,
-                      onChanged: authProvider.isLoading
-                          ? null
-                          : (bool val) async {
-                              final messenger = ScaffoldMessenger.of(context);
-                              try {
-                                await authProvider.updateAvailability(val);
-                                messenger.showSnackBar(
-                                  SnackBar(
-                                    content: Text(
-                                      val ? 'Availability set to Active!' : 'Availability set to Inactive.',
-                                    ),
-                                    backgroundColor: val ? Colors.green : Colors.grey[850],
-                                    duration: const Duration(seconds: 2),
-                                  ),
-                                );
-                              } catch (e) {
-                                messenger.showSnackBar(
-                                  SnackBar(
-                                    content: Text('Failed: ${e.toString()}'),
-                                    backgroundColor: Colors.red,
-                                  ),
-                                );
-                              }
-                            },
-                    ),
-                  ],
+                    ],
+                  ),
+                ),
+                Switch.adaptive(
+                  value: isAvailable,
+                  activeThumbColor: Colors.red,
+                  activeTrackColor: Colors.red.shade100,
+                  onChanged: (bool val) async {
+                    final messenger = ScaffoldMessenger.of(context);
+                    try {
+                      await Provider.of<AuthProvider>(context, listen: false)
+                          .updateAvailability(val);
+                      messenger.showSnackBar(
+                        SnackBar(
+                          content: Text(
+                            val ? 'Availability set to Active!' : 'Availability set to Inactive.',
+                          ),
+                          backgroundColor: val ? Colors.green : Colors.grey[850],
+                          duration: const Duration(seconds: 2),
+                        ),
+                      );
+                    } catch (e) {
+                      messenger.showSnackBar(
+                        SnackBar(
+                          content: Text('Failed: ${e.toString()}'),
+                          backgroundColor: Colors.red,
+                        ),
+                      );
+                    }
+                  },
                 ),
               ],
             ),
           ),
           const SizedBox(height: 8),
 
-          // Informative Warning Banner if donor is unavailable
           if (!isAvailable)
             Container(
               margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -285,7 +606,6 @@ class _DonorDashboardState extends State<DonorDashboard> {
             ),
           ),
 
-          // Central content depending on GPS state
           Expanded(
             child: _fetchingLocation
                 ? const Center(
@@ -309,7 +629,10 @@ class _DonorDashboardState extends State<DonorDashboard> {
                               const SizedBox(height: 16),
                               Text(
                                 'GPS Location Error',
-                                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.blue[900]),
+                                style: TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.blue[900]),
                               ),
                               const SizedBox(height: 8),
                               Text(
@@ -336,7 +659,7 @@ class _DonorDashboardState extends State<DonorDashboard> {
                           )
                         : StreamBuilder<List<BloodRequestModel>>(
                             stream: bloodProvider.streamNearbyPendingRequests(
-                              bloodGroup: user?.bloodGroup ?? '',
+                              bloodGroup: user.bloodGroup ?? '',
                               donorLat: _currentPosition!.latitude,
                               donorLng: _currentPosition!.longitude,
                               radiusInKm: 10.0,
@@ -365,11 +688,14 @@ class _DonorDashboardState extends State<DonorDashboard> {
                                         const SizedBox(height: 16),
                                         Text(
                                           'No pending requests found',
-                                          style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: Colors.blue[900]),
+                                          style: TextStyle(
+                                              fontSize: 17,
+                                              fontWeight: FontWeight.bold,
+                                              color: Colors.blue[900]),
                                         ),
                                         const SizedBox(height: 8),
                                         Text(
-                                          'There are no emergency requests for blood group "${user?.bloodGroup ?? ''}" within 10km.',
+                                          'There are no emergency requests for blood group "${user.bloodGroup ?? ''}" within 10km.',
                                           textAlign: TextAlign.center,
                                           style: TextStyle(fontSize: 13, color: Colors.grey[600]),
                                         ),
@@ -385,7 +711,6 @@ class _DonorDashboardState extends State<DonorDashboard> {
                                 itemBuilder: (context, index) {
                                   final req = requests[index];
 
-                                  // Calculate distance using GeoFirePoint distance helper
                                   final double distance = GeoFirePoint(GeoPoint(
                                     _currentPosition!.latitude,
                                     _currentPosition!.longitude,
@@ -394,7 +719,7 @@ class _DonorDashboardState extends State<DonorDashboard> {
                                   return NearbyRequestCard(
                                     request: req,
                                     distance: distance,
-                                    onAccept: () => _confirmAccept(context, req, user!.uid),
+                                    onAccept: () => _confirmAccept(context, req, user.uid, user.phone),
                                     isAccepting: bloodProvider.isLoading,
                                   );
                                 },
@@ -450,7 +775,6 @@ class NearbyRequestCard extends StatelessWidget {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                // Blood type required
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                   decoration: BoxDecoration(
@@ -466,7 +790,6 @@ class NearbyRequestCard extends StatelessWidget {
                     ),
                   ),
                 ),
-                // Urgency level tag
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   decoration: BoxDecoration(
@@ -485,7 +808,6 @@ class NearbyRequestCard extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 12),
-            // Patient and Units details
             Text(
               'Patient: ${request.patientName}',
               style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
@@ -496,7 +818,6 @@ class NearbyRequestCard extends StatelessWidget {
               style: TextStyle(color: Colors.grey[700], fontSize: 14),
             ),
             const SizedBox(height: 8),
-            // Hospital details
             Row(
               children: [
                 const Icon(Icons.location_on, size: 16, color: Colors.red),
@@ -510,7 +831,6 @@ class NearbyRequestCard extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 4),
-            // Distance indicator
             Row(
               children: [
                 const Icon(Icons.navigation, size: 16, color: Colors.blue),
@@ -522,7 +842,6 @@ class NearbyRequestCard extends StatelessWidget {
               ],
             ),
             const Divider(height: 24),
-            // Accept Request Button
             SizedBox(
               width: double.infinity,
               child: CustomButton(

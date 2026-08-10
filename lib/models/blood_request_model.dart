@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 class BloodRequestModel {
   final String id;
   final String requesterId;
+  final String requesterPhone; // Phone of requester
   final String patientName;
   final String bloodGroupNeeded;
   final int unitsNeeded;
@@ -12,10 +13,13 @@ class BloodRequestModel {
   final String status; // 'pending' / 'accepted' / 'completed' / 'cancelled'
   final DateTime createdAt;
   final String? acceptedByDonorId;
+  final String? acceptedByDonorPhone; // Phone of accepted donor
+  final GeoPoint? donorLiveLocation; // Live tracking coordinates of donor
 
   BloodRequestModel({
     required this.id,
     required this.requesterId,
+    required this.requesterPhone,
     required this.patientName,
     required this.bloodGroupNeeded,
     required this.unitsNeeded,
@@ -25,12 +29,15 @@ class BloodRequestModel {
     required this.status,
     required this.createdAt,
     this.acceptedByDonorId,
+    this.acceptedByDonorPhone,
+    this.donorLiveLocation,
   });
 
   factory BloodRequestModel.fromMap(Map<String, dynamic> map, String id) {
     return BloodRequestModel(
       id: id,
       requesterId: map['requesterId'] ?? '',
+      requesterPhone: map['requesterPhone'] ?? '',
       patientName: map['patientName'] ?? '',
       bloodGroupNeeded: map['bloodGroupNeeded'] ?? '',
       unitsNeeded: (map['unitsNeeded'] as num?)?.toInt() ?? 1,
@@ -42,6 +49,8 @@ class BloodRequestModel {
           ? (map['createdAt'] as Timestamp).toDate()
           : DateTime.now(),
       acceptedByDonorId: map['acceptedByDonorId'],
+      acceptedByDonorPhone: map['acceptedByDonorPhone'],
+      donorLiveLocation: map['donorLiveLocation'] as GeoPoint?,
     );
   }
 
@@ -49,6 +58,7 @@ class BloodRequestModel {
     return {
       'id': id,
       'requesterId': requesterId,
+      'requesterPhone': requesterPhone,
       'patientName': patientName,
       'bloodGroupNeeded': bloodGroupNeeded,
       'unitsNeeded': unitsNeeded,
@@ -58,6 +68,8 @@ class BloodRequestModel {
       'status': status,
       'createdAt': Timestamp.fromDate(createdAt),
       'acceptedByDonorId': acceptedByDonorId,
+      'acceptedByDonorPhone': acceptedByDonorPhone,
+      'donorLiveLocation': donorLiveLocation,
     };
   }
 

@@ -6,6 +6,7 @@ import '../providers/auth_provider.dart';
 import '../providers/blood_request_provider.dart';
 import '../models/blood_request_model.dart';
 import '../widgets/custom_button.dart';
+import 'donor_tracking_screen.dart';
 
 class RequesterDashboard extends StatelessWidget {
   const RequesterDashboard({super.key});
@@ -217,6 +218,7 @@ class _RequestFormSheetState extends State<RequestFormSheet> {
       _fetchingLocation = true;
     });
 
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
     final bloodProvider = Provider.of<BloodRequestProvider>(context, listen: false);
     final messenger = ScaffoldMessenger.of(context);
     final navigator = Navigator.of(context);
@@ -224,10 +226,12 @@ class _RequestFormSheetState extends State<RequestFormSheet> {
     try {
       // 1. Fetch GPS location coordinates
       final position = await _determineGPSPosition();
+      final requesterPhone = authProvider.currentUser?.phone ?? '';
 
       // 2. Post new blood request to Firestore
       await bloodProvider.createRequest(
         requesterId: widget.requesterId,
+        requesterPhone: requesterPhone,
         patientName: _patientNameController.text.trim(),
         bloodGroupNeeded: _selectedBloodGroup,
         unitsNeeded: int.parse(_unitsController.text),
@@ -569,9 +573,31 @@ class RequestCard extends StatelessWidget {
               ],
             ),
             const Divider(height: 24),
-            Text(
-              'Posted: $dateStr',
-              style: const TextStyle(fontSize: 11, color: Colors.grey),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Posted: $dateStr',
+                  style: const TextStyle(fontSize: 11, color: Colors.grey),
+                ),
+                if (request.status == 'accepted')
+                  TextButton.icon(
+                    icon: const Icon(Icons.map_rounded, size: 16),
+                    label: const Text('TRACK DONOR'),
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => DonorTrackingScreen(requestId: request.id),
+                        ),
+                      );
+                    },
+                    style: TextButton.styleFrom(
+                      foregroundColor: Colors.red[800],
+                      textStyle: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                  ),
+              ],
             ),
           ],
         ),
