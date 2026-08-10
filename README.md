@@ -1,5 +1,7 @@
 # PulsePoint - Blood Donation & Emergency Request Platform
 
+[![Download Latest Release](https://img.shields.io/badge/Download-v1.0.0-blue?style=for-the-badge&logo=android)](https://github.com/mustabshiranasir/PulsePoint/releases/tag/v1.0.0)
+
 PulsePoint is a real-time, location-aware Flutter application designed to bridge the gap between blood requesters (hospitals or patients) and nearby blood donors. The app uses Firebase for real-time data sync and Cloud Messaging (FCM) for push notifications, featuring local offline caching with Hive, background geofencing matching, and a responsive UI.
 
 ---
