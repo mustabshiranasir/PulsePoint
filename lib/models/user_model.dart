@@ -1,3 +1,5 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+
 class UserModel {
   final String uid;
   final String name;
@@ -5,6 +7,8 @@ class UserModel {
   final String role; // 'requester' or 'donor'
   final String? bloodGroup; // Only for 'donor'
   final bool? isAvailable; // Only for 'donor'
+  final String? fcmToken;
+  final GeoPoint? location;
 
   UserModel({
     required this.uid,
@@ -13,6 +17,8 @@ class UserModel {
     required this.role,
     this.bloodGroup,
     this.isAvailable,
+    this.fcmToken,
+    this.location,
   });
 
   factory UserModel.fromMap(Map<String, dynamic> map, String uid) {
@@ -23,6 +29,8 @@ class UserModel {
       role: map['role'] ?? 'requester',
       bloodGroup: map['bloodGroup'],
       isAvailable: map['isAvailable'] ?? false,
+      fcmToken: map['fcmToken'],
+      location: map['location'] as GeoPoint?,
     );
   }
 
@@ -32,10 +40,12 @@ class UserModel {
       'name': name,
       'phone': phone,
       'role': role,
+      'fcmToken': fcmToken,
     };
     if (role == 'donor') {
       data['bloodGroup'] = bloodGroup;
       data['isAvailable'] = isAvailable;
+      data['location'] = location;
     }
     return data;
   }

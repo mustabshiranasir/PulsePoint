@@ -1,6 +1,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:geoflutterfire_plus/geoflutterfire_plus.dart';
+import 'package:hive_flutter/hive_flutter.dart';
 import '../models/blood_request_model.dart';
+import '../models/cached_request.dart';
 
 class BloodRequestService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -53,9 +55,12 @@ class BloodRequestService {
         .orderBy('createdAt', descending: true)
         .snapshots()
         .map((snapshot) {
-      return snapshot.docs
+      final requests = snapshot.docs
           .map((doc) => BloodRequestModel.fromMap(doc.data(), doc.id))
           .toList();
+          
+      _cacheRequests(requests);
+      return requests;
     });
   }
 
@@ -107,6 +112,7 @@ class BloodRequestService {
         return distA.compareTo(distB);
       });
 
+      _cacheRequests(requests);
       return requests;
     });
   }
@@ -174,6 +180,26 @@ class BloodRequestService {
       });
     } catch (e) {
       throw Exception('Failed to update request status: ${e.toString()}');
+    }
+  }
+
+  void _cacheRequests(List<BloodRequestModel> requests) {
+    try {
+      final box = Hive.box<CachedRequest>('cached_requests');
+      for (final req in requests) {
+        box.put(req.id, CachedRequest(
+          id: req.id,
+          patientName: req.patientName,
+          bloodGroupNeeded: req.bloodGroupNeeded,
+          hospitalName: req.hospitalName,
+          urgencyLevel: req.urgencyLevel,
+          status: req.status,
+          createdAt: req.createdAt,
+          cachedAt: DateTime.now(),
+        ));
+      }
+    } catch (e) {
+      print("Error caching requests: $e");
     }
   }
 }

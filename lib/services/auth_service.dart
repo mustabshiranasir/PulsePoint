@@ -1,5 +1,6 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import '../models/user_model.dart';
 
 class AuthService {
@@ -44,6 +45,15 @@ class AuthService {
 
       final String uid = credential.user!.uid;
 
+      // Get FCM Token
+      String? fcmToken;
+      try {
+        await FirebaseMessaging.instance.requestPermission();
+        fcmToken = await FirebaseMessaging.instance.getToken();
+      } catch (e) {
+        print("Error getting FCM token: $e");
+      }
+
       // 2. Create the user model
       final UserModel newUser = UserModel(
         uid: uid,
@@ -52,6 +62,7 @@ class AuthService {
         role: role,
         bloodGroup: role == 'donor' ? bloodGroup : null,
         isAvailable: role == 'donor' ? (isAvailable ?? false) : null,
+        fcmToken: fcmToken,
       );
 
       // 3. Save details to Firestore
@@ -82,12 +93,33 @@ class AuthService {
       final String uid = credential.user!.uid;
 
       // 2. Fetch user profile from Firestore
-      final UserModel? profile = await getUserProfile(uid);
+      UserModel? profile = await getUserProfile(uid);
       if (profile == null) {
         throw Exception('User profile not found in database.');
       }
 
-      return profile;
+      // Update FCM token on login
+      try {
+        await FirebaseMessaging.instance.requestPermission();
+        String? token = await FirebaseMessaging.instance.getToken();
+        if (token != null && token != profile.fcmToken) {
+          await _firestore.collection('users').doc(uid).update({'fcmToken': token});
+          profile = UserModel(
+            uid: profile.uid,
+            name: profile.name,
+            phone: profile.phone,
+            role: profile.role,
+            bloodGroup: profile.bloodGroup,
+            isAvailable: profile.isAvailable,
+            fcmToken: token,
+            location: profile.location,
+          );
+        }
+      } catch (e) {
+         print("Error updating FCM token on login: $e");
+      }
+
+      return profile!;
     } on FirebaseAuthException catch (e) {
       throw Exception(_handleAuthError(e));
     } catch (e) {

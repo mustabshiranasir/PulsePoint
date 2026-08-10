@@ -1,11 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:provider/provider.dart';
+import 'package:hive_flutter/hive_flutter.dart';
+import 'package:path_provider/path_provider.dart';
 import 'providers/auth_provider.dart';
 import 'providers/blood_request_provider.dart';
 import 'screens/login_screen.dart';
 import 'screens/donor_dashboard.dart';
 import 'screens/requester_dashboard.dart';
+import 'services/notification_service.dart';
+import 'models/cached_request.dart';
+import 'screens/donor_tracking_screen.dart';
+
+final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -15,12 +22,23 @@ void main() async {
 
   try {
     // Attempt standard Firebase initialization.
-    // If firebase config files are missing, this safely fails with an error message
-    // instead of a hard crash, informing the user how to configure it.
     await Firebase.initializeApp();
     firebaseInitialized = true;
+    
+    // Initialize Notifications
+    NotificationService.initialize(navigatorKey);
+    NotificationService.setupTerminatedState(navigatorKey);
   } catch (e) {
     firebaseError = e.toString();
+  }
+
+  try {
+    // Initialize Hive
+    await Hive.initFlutter();
+    Hive.registerAdapter(CachedRequestAdapter());
+    await Hive.openBox<CachedRequest>('cached_requests');
+  } catch (e) {
+    print("Error initializing Hive: $e");
   }
 
   runApp(PulsePointApp(
@@ -49,6 +67,13 @@ class PulsePointApp extends StatelessWidget {
       child: MaterialApp(
         title: 'PulsePoint',
         debugShowCheckedModeBanner: false,
+        navigatorKey: navigatorKey,
+        routes: {
+          '/request_details': (context) {
+            final String requestId = ModalRoute.of(context)!.settings.arguments as String;
+            return DonorTrackingScreen(requestId: requestId);
+          },
+        },
         theme: ThemeData(
           useMaterial3: true,
           colorScheme: ColorScheme.fromSeed(
@@ -97,27 +122,52 @@ class AuthGate extends StatelessWidget {
     // Show loading/splash screen if Provider isn't initialized yet
     if (!authProvider.isInitialized) {
       return Scaffold(
-        body: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(
-                Icons.bloodtype_rounded,
-                size: 80,
-                color: Colors.red[800],
-              ),
-              const SizedBox(height: 24),
-              const SizedBox(
-                width: 40,
-                height: 40,
-                child: CircularProgressIndicator(),
-              ),
-              const SizedBox(height: 16),
-              const Text(
-                'Connecting to PulsePoint...',
-                style: TextStyle(fontWeight: FontWeight.w500, color: Colors.grey),
-              ),
-            ],
+        body: Container(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [Color(0xFFC62828), Color(0xFF0D47A1)], // Red to Blue emergency theme
+            ),
+          ),
+          child: Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(
+                  Icons.favorite,
+                  size: 100,
+                  color: Colors.white,
+                ),
+                const SizedBox(height: 16),
+                const Text(
+                  'PulsePoint',
+                  style: TextStyle(
+                    fontSize: 36,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                    letterSpacing: 2,
+                  ),
+                ),
+                const SizedBox(height: 48),
+                const SizedBox(
+                  width: 40,
+                  height: 40,
+                  child: CircularProgressIndicator(
+                    valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                const Text(
+                  'Connecting...',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w500,
+                    color: Colors.white70,
+                    fontSize: 16,
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       );

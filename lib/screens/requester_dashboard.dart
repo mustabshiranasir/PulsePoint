@@ -7,6 +7,7 @@ import '../providers/blood_request_provider.dart';
 import '../models/blood_request_model.dart';
 import '../widgets/custom_button.dart';
 import 'donor_tracking_screen.dart';
+import 'history_screen.dart';
 
 class RequesterDashboard extends StatelessWidget {
   const RequesterDashboard({super.key});
@@ -64,6 +65,47 @@ class RequesterDashboard extends StatelessWidget {
         icon: const Icon(Icons.add),
         backgroundColor: Colors.red[800],
         foregroundColor: Colors.white,
+      ),
+      drawer: Drawer(
+        child: ListView(
+          padding: EdgeInsets.zero,
+          children: [
+            DrawerHeader(
+              decoration: BoxDecoration(color: Colors.red[800]),
+              child: const Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  Icon(Icons.local_hospital, color: Colors.white, size: 50),
+                  SizedBox(height: 10),
+                  Text('PulsePoint Requester Menu', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+                ],
+              ),
+            ),
+            ListTile(
+              leading: const Icon(Icons.history),
+              title: const Text('Request History'),
+              onTap: () {
+                Navigator.pop(context); // Close drawer
+                Navigator.push(context, MaterialPageRoute(builder: (_) => const HistoryScreen()));
+              },
+            ),
+            const Divider(),
+            ListTile(
+              leading: const Icon(Icons.logout, color: Colors.red),
+              title: const Text('Logout', style: TextStyle(color: Colors.red)),
+              onTap: () async {
+                Navigator.pop(context);
+                final messenger = ScaffoldMessenger.of(context);
+                try {
+                  await Provider.of<AuthProvider>(context, listen: false).logout();
+                } catch (e) {
+                  messenger.showSnackBar(SnackBar(content: Text('Logout failed: ${e.toString()}')));
+                }
+              },
+            ),
+          ],
+        ),
       ),
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,

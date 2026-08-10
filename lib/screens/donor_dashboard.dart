@@ -12,6 +12,8 @@ import '../providers/auth_provider.dart';
 import '../providers/blood_request_provider.dart';
 import '../models/blood_request_model.dart';
 import '../widgets/custom_button.dart';
+import 'history_screen.dart';
+import 'profile_screen.dart';
 
 class DonorDashboard extends StatefulWidget {
   const DonorDashboard({super.key});
@@ -479,6 +481,55 @@ class _DonorDashboardState extends State<DonorDashboard> {
             },
           ),
         ],
+      ),
+      drawer: Drawer(
+        child: ListView(
+          padding: EdgeInsets.zero,
+          children: [
+            DrawerHeader(
+              decoration: BoxDecoration(color: Colors.blue[900]),
+              child: const Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  Icon(Icons.person, color: Colors.white, size: 50),
+                  SizedBox(height: 10),
+                  Text('PulsePoint Donor Menu', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+                ],
+              ),
+            ),
+            ListTile(
+              leading: const Icon(Icons.history),
+              title: const Text('Request History'),
+              onTap: () {
+                Navigator.pop(context); // Close drawer
+                Navigator.push(context, MaterialPageRoute(builder: (_) => const HistoryScreen()));
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.person),
+              title: const Text('Profile'),
+              onTap: () {
+                Navigator.pop(context); // Close drawer
+                Navigator.push(context, MaterialPageRoute(builder: (_) => const ProfileScreen()));
+              },
+            ),
+            const Divider(),
+            ListTile(
+              leading: const Icon(Icons.logout, color: Colors.red),
+              title: const Text('Logout', style: TextStyle(color: Colors.red)),
+              onTap: () async {
+                Navigator.pop(context);
+                final messenger = ScaffoldMessenger.of(context);
+                try {
+                  await Provider.of<AuthProvider>(context, listen: false).logout();
+                } catch (e) {
+                  messenger.showSnackBar(SnackBar(content: Text('Logout failed: ${e.toString()}')));
+                }
+              },
+            ),
+          ],
+        ),
       ),
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
