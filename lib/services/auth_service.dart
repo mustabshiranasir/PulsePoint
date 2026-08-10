@@ -58,8 +58,8 @@ class AuthService {
       // Get FCM Token
       String? fcmToken;
       try {
-        await FirebaseMessaging.instance.requestPermission();
-        fcmToken = await FirebaseMessaging.instance.getToken();
+        await FirebaseMessaging.instance.requestPermission().timeout(const Duration(seconds: 3));
+        fcmToken = await FirebaseMessaging.instance.getToken().timeout(const Duration(seconds: 3));
       } catch (e) {
         print("Error getting FCM token: $e");
       }
@@ -110,8 +110,8 @@ class AuthService {
 
       // Update FCM token on login
       try {
-        await FirebaseMessaging.instance.requestPermission();
-        String? token = await FirebaseMessaging.instance.getToken();
+        await FirebaseMessaging.instance.requestPermission().timeout(const Duration(seconds: 3));
+        String? token = await FirebaseMessaging.instance.getToken().timeout(const Duration(seconds: 3));
         if (token != null && token != profile.fcmToken) {
           await _firestore.collection('users').doc(uid).update({'fcmToken': token});
           profile = UserModel(
