@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../models/user_model.dart';
@@ -18,21 +19,23 @@ class AuthProvider with ChangeNotifier {
     _listenToAuthChanges();
   }
 
+  StreamSubscription<UserModel?>? _profileSubscription;
+
   // Listens to Firebase auth state changes and fetches Firestore details
   void _listenToAuthChanges() {
-    _authService.userStream.listen((User? firebaseUser) async {
+    _authService.userStream.listen((User? firebaseUser) {
+      _profileSubscription?.cancel();
       if (firebaseUser != null) {
-        try {
-          _currentUser = await _authService.getUserProfile(firebaseUser.uid);
-        } catch (e) {
-          // If Firestore document fails to fetch (e.g. not created yet or network issue)
-          _currentUser = null;
-        }
+        _profileSubscription = _authService.streamUserProfile(firebaseUser.uid).listen((UserModel? profile) {
+          _currentUser = profile;
+          _isInitialized = true;
+          notifyListeners();
+        });
       } else {
         _currentUser = null;
+        _isInitialized = true;
+        notifyListeners();
       }
-      _isInitialized = true;
-      notifyListeners();
     });
   }
 

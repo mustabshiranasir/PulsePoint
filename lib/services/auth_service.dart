@@ -26,6 +26,16 @@ class AuthService {
     }
   }
 
+  // Stream user profile from Firestore in real-time
+  Stream<UserModel?> streamUserProfile(String uid) {
+    return _firestore.collection('users').doc(uid).snapshots().map((snapshot) {
+      if (snapshot.exists && snapshot.data() != null) {
+        return UserModel.fromMap(snapshot.data()!, uid);
+      }
+      return null;
+    });
+  }
+
   // Sign up user (Auth + Firestore document creation)
   Future<UserModel> signUp({
     required String email,
