@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
+import '../widgets/custom_button.dart';
 import 'signup_screen.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -144,30 +145,11 @@ class _LoginScreenState extends State<LoginScreen> {
                     },
                   ),
                   const SizedBox(height: 24),
-                  ElevatedButton(
-                    onPressed: authProvider.isLoading ? null : _submit,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.red[800],
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 16),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      elevation: 2,
-                    ),
-                    child: authProvider.isLoading
-                        ? const SizedBox(
-                            height: 20,
-                            width: 20,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: Colors.white,
-                            ),
-                          )
-                        : const Text(
-                            'LOGIN',
-                            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                          ),
+                  CustomButton(
+                    text: 'LOGIN',
+                    onPressed: _submit,
+                    isLoading: authProvider.isLoading,
+                    backgroundColor: Colors.red[800],
                   ),
                   const SizedBox(height: 24),
                   Row(

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
+import '../widgets/custom_button.dart';
 
 class SignupScreen extends StatefulWidget {
   const SignupScreen({super.key});
@@ -328,31 +329,11 @@ class _SignupScreenState extends State<SignupScreen> {
                   ),
                   const SizedBox(height: 24),
                 ],
-                ElevatedButton(
-                  onPressed: authProvider.isLoading ? null : _submit,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor:
-                        _selectedRole == 'donor' ? Colors.red[800] : Colors.blue[900],
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    elevation: 2,
-                  ),
-                  child: authProvider.isLoading
-                      ? const SizedBox(
-                          height: 20,
-                          width: 20,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white,
-                          ),
-                        )
-                      : const Text(
-                          'REGISTER',
-                          style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                        ),
+                CustomButton(
+                  text: 'REGISTER',
+                  onPressed: _submit,
+                  isLoading: authProvider.isLoading,
+                  backgroundColor: _selectedRole == 'donor' ? Colors.red[800] : Colors.blue[900],
                 ),
                 const SizedBox(height: 16),
               ],
