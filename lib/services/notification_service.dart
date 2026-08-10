@@ -1,6 +1,8 @@
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   print("Handling a background message: ${message.messageId}");
@@ -12,6 +14,20 @@ class NotificationService {
 
   static void initialize(GlobalKey<NavigatorState> navigatorKey) {
     FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+
+    // Listen to token rotation and refresh Firestore user document
+    FirebaseMessaging.instance.onTokenRefresh.listen((newToken) async {
+      try {
+        final uid = FirebaseAuth.instance.currentUser?.uid;
+        if (uid != null) {
+          await FirebaseFirestore.instance.collection('users').doc(uid).update({
+            'fcmToken': newToken,
+          });
+        }
+      } catch (e) {
+        print("Error updating refreshed token: $e");
+      }
+    });
 
     const AndroidInitializationSettings initializationSettingsAndroid =
         AndroidInitializationSettings('@mipmap/ic_launcher');

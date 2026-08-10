@@ -11,6 +11,9 @@ import 'package:url_launcher/url_launcher.dart';
 import '../providers/auth_provider.dart';
 import '../providers/blood_request_provider.dart';
 import '../models/blood_request_model.dart';
+import '../models/cached_request.dart';
+import 'package:hive_flutter/hive_flutter.dart';
+import 'package:intl/intl.dart';
 import '../widgets/custom_button.dart';
 import 'history_screen.dart';
 import 'profile_screen.dart';
@@ -721,6 +724,67 @@ class _DonorDashboardState extends State<DonorDashboard> {
                               }
 
                               if (snapshot.hasError) {
+                                try {
+                                  final box = Hive.box<CachedRequest>('cached_requests');
+                                  final cachedList = box.values
+                                      .where((req) => req.bloodGroupNeeded == user.bloodGroup && req.status == 'pending')
+                                      .toList();
+                                  if (cachedList.isNotEmpty) {
+                                    final lastUpdated = cachedList.first.cachedAt;
+                                    return Column(
+                                      children: [
+                                        Container(
+                                          color: Colors.amber[100],
+                                          padding: const EdgeInsets.all(12),
+                                          child: Row(
+                                            children: [
+                                              const Icon(Icons.cloud_off, color: Colors.orange),
+                                              const SizedBox(width: 12),
+                                              Expanded(
+                                                child: Text(
+                                                  'Offline Mode. Showing cached requests.\nLast updated: ${DateFormat('MMM dd, yyyy - hh:mm a').format(lastUpdated)}',
+                                                  style: const TextStyle(color: Colors.black87, fontSize: 13),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                        Expanded(
+                                          child: ListView.builder(
+                                            padding: const EdgeInsets.symmetric(horizontal: 16),
+                                            itemCount: cachedList.length,
+                                            itemBuilder: (context, index) {
+                                              final cachedReq = cachedList[index];
+                                              final req = BloodRequestModel(
+                                                id: cachedReq.id,
+                                                requesterId: '',
+                                                requesterPhone: '',
+                                                patientName: cachedReq.patientName,
+                                                bloodGroupNeeded: cachedReq.bloodGroupNeeded,
+                                                unitsNeeded: 1,
+                                                hospitalName: cachedReq.hospitalName,
+                                                hospitalLocation: {},
+                                                urgencyLevel: cachedReq.urgencyLevel,
+                                                status: cachedReq.status,
+                                                createdAt: cachedReq.createdAt,
+                                              );
+                                              return NearbyRequestCard(
+                                                request: req,
+                                                distance: 0.0,
+                                                onAccept: () {
+                                                  ScaffoldMessenger.of(context).showSnackBar(
+                                                    const SnackBar(content: Text('Cannot accept requests offline.')),
+                                                  );
+                                                },
+                                                isAccepting: false,
+                                              );
+                                            },
+                                          ),
+                                        ),
+                                      ],
+                                    );
+                                  }
+                                } catch (_) {}
                                 return Center(
                                   child: Text('Error loading requests: ${snapshot.error}'),
                                 );

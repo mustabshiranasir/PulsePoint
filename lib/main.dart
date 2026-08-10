@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:provider/provider.dart';
 import 'package:hive_flutter/hive_flutter.dart';
-import 'package:path_provider/path_provider.dart';
 import 'providers/auth_provider.dart';
 import 'providers/blood_request_provider.dart';
 import 'screens/login_screen.dart';
@@ -11,6 +10,7 @@ import 'screens/requester_dashboard.dart';
 import 'services/notification_service.dart';
 import 'models/cached_request.dart';
 import 'screens/donor_tracking_screen.dart';
+import 'firebase_options.dart';
 
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
@@ -21,9 +21,12 @@ void main() async {
   String? firebaseError;
 
   try {
-    // Attempt standard Firebase initialization.
-    await Firebase.initializeApp();
+    // Initialize Firebase with platform-specific options.
+    await Firebase.initializeApp(
+      options: DefaultFirebaseOptions.currentPlatform,
+    );
     firebaseInitialized = true;
+    print("Firebase connected successfully");
     
     // Initialize Notifications
     NotificationService.initialize(navigatorKey);

@@ -8,6 +8,8 @@ import '../models/blood_request_model.dart';
 import '../widgets/custom_button.dart';
 import 'donor_tracking_screen.dart';
 import 'history_screen.dart';
+import 'package:hive_flutter/hive_flutter.dart';
+import '../models/cached_request.dart';
 
 class RequesterDashboard extends StatelessWidget {
   const RequesterDashboard({super.key});
@@ -174,6 +176,56 @@ class RequesterDashboard extends StatelessWidget {
                 }
 
                 if (snapshot.hasError) {
+                  try {
+                    final box = Hive.box<CachedRequest>('cached_requests');
+                    final cachedList = box.values.toList();
+                    if (cachedList.isNotEmpty) {
+                      final lastUpdated = cachedList.first.cachedAt;
+                      return Column(
+                        children: [
+                          Container(
+                            color: Colors.amber[100],
+                            padding: const EdgeInsets.all(12),
+                            child: Row(
+                              children: [
+                                const Icon(Icons.cloud_off, color: Colors.orange),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Text(
+                                    'Offline Mode. Showing cached requests.\nLast updated: ${DateFormat('MMM dd, yyyy - hh:mm a').format(lastUpdated)}',
+                                    style: const TextStyle(color: Colors.black87, fontSize: 13),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          Expanded(
+                            child: ListView.builder(
+                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                              itemCount: cachedList.length,
+                              itemBuilder: (context, index) {
+                                final cachedReq = cachedList[index];
+                                final req = BloodRequestModel(
+                                  id: cachedReq.id,
+                                  requesterId: user?.uid ?? '',
+                                  requesterPhone: user?.phone ?? '',
+                                  patientName: cachedReq.patientName,
+                                  bloodGroupNeeded: cachedReq.bloodGroupNeeded,
+                                  unitsNeeded: 1,
+                                  hospitalName: cachedReq.hospitalName,
+                                  hospitalLocation: {},
+                                  urgencyLevel: cachedReq.urgencyLevel,
+                                  status: cachedReq.status,
+                                  createdAt: cachedReq.createdAt,
+                                );
+                                return RequestCard(request: req);
+                              },
+                            ),
+                          ),
+                        ],
+                      );
+                    }
+                  } catch (_) {}
                   return Center(
                     child: Text('Error: ${snapshot.error}'),
                   );
