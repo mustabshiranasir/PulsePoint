@@ -103,8 +103,10 @@ class _SignupScreenState extends State<SignupScreen> {
                   ),
                 ),
                 const SizedBox(height: 32),
-                TextFormField(
+                 TextFormField(
                   controller: _nameController,
+                  textInputAction: TextInputAction.next,
+                  autofillHints: const [AutofillHints.name],
                   decoration: InputDecoration(
                     labelText: 'Full Name',
                     prefixIcon: const Icon(Icons.person_outline),
@@ -123,6 +125,8 @@ class _SignupScreenState extends State<SignupScreen> {
                 TextFormField(
                   controller: _phoneController,
                   keyboardType: TextInputType.phone,
+                  textInputAction: TextInputAction.next,
+                  autofillHints: const [AutofillHints.telephoneNumber],
                   decoration: InputDecoration(
                     labelText: 'Phone Number',
                     prefixIcon: const Icon(Icons.phone_outlined),
@@ -144,6 +148,8 @@ class _SignupScreenState extends State<SignupScreen> {
                 TextFormField(
                   controller: _emailController,
                   keyboardType: TextInputType.emailAddress,
+                  textInputAction: TextInputAction.next,
+                  autofillHints: const [AutofillHints.email],
                   decoration: InputDecoration(
                     labelText: 'Email Address',
                     prefixIcon: const Icon(Icons.email_outlined),
@@ -165,6 +171,9 @@ class _SignupScreenState extends State<SignupScreen> {
                 TextFormField(
                   controller: _passwordController,
                   obscureText: _obscurePassword,
+                  textInputAction: TextInputAction.done,
+                  autofillHints: const [AutofillHints.newPassword],
+                  onFieldSubmitted: (_) => _submit(),
                   decoration: InputDecoration(
                     labelText: 'Password',
                     prefixIcon: const Icon(Icons.lock_outlined),
